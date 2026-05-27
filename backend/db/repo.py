@@ -147,7 +147,43 @@ class FindingsRepo:
         return []
 
 
-# Singletons
-chat_repo = ChatRepo()
-audit_repo = AuditRepo()
-findings_repo = FindingsRepo()
+
+# ─── Lazy singletons (avoids crash when Supabase keys not set yet) ───
+_chat_repo = None
+_audit_repo = None
+_findings_repo = None
+
+
+def _get_chat_repo():
+    global _chat_repo
+    if _chat_repo is None:
+        _chat_repo = ChatRepo()
+    return _chat_repo
+
+
+def _get_audit_repo():
+    global _audit_repo
+    if _audit_repo is None:
+        _audit_repo = AuditRepo()
+    return _audit_repo
+
+
+def _get_findings_repo():
+    global _findings_repo
+    if _findings_repo is None:
+        _findings_repo = FindingsRepo()
+    return _findings_repo
+
+
+class _LazyProxy:
+    """Proxy that defers repo creation until first use."""
+    def __init__(self, factory):
+        self._factory = factory
+
+    def __getattr__(self, name):
+        return getattr(self._factory(), name)
+
+
+chat_repo = _LazyProxy(_get_chat_repo)
+audit_repo = _LazyProxy(_get_audit_repo)
+findings_repo = _LazyProxy(_get_findings_repo)

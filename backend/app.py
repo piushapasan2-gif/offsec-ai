@@ -20,7 +20,7 @@ app = Flask(
     static_url_path="/static",
 )
 app.config["SECRET_KEY"] = Config.SECRET_KEY
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet")
 
 
 # ─── Static frontend ───
