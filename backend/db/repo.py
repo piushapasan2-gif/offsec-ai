@@ -1,0 +1,153 @@
+"""Storage repository - switches between Supabase and SQLite based on config."""
+import sqlite3, json, time, uuid
+from backend.config import Config
+from backend.db.supabase_client import get_client, is_configured
+
+
+def _use_supabase():
+    return Config.STORAGE_BACKEND == "supabase" and is_configured()
+
+
+# ═══════════════════════════════════════════════════════════
+#  Chat (sessions + messages)
+# ═══════════════════════════════════════════════════════════
+class ChatRepo:
+    def __init__(self):
+        if not _use_supabase():
+            self.db = sqlite3.connect(Config.DB_DIR / "chat_history.db", check_same_thread=False)
+            self.db.executescript("""
+            CREATE TABLE IF NOT EXISTS sessions (
+                id TEXT PRIMARY KEY, user_id TEXT, created REAL, title TEXT, meta TEXT
+            );
+            CREATE TABLE IF NOT EXISTS messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, user_id TEXT,
+                ts REAL, role TEXT, content TEXT, provider TEXT, model TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_msg_session ON messages(session_id, ts);
+            """)
+
+    def new_session(self, user_id, title="New chat", meta=None):
+        if _use_supabase():
+            r = get_client().insert("chat_sessions", {
+                "user_id": user_id, "title": title, "meta": meta or {}
+            })
+            return r[0]["id"] if r else None
+        sid = str(uuid.uuid4())
+        self.db.execute(
+            "INSERT INTO sessions (id, user_id, created, title, meta) VALUES (?, ?, ?, ?, ?)",
+            (sid, user_id, time.time(), title, json.dumps(meta or {}))
+        )
+        self.db.commit()
+        return sid
+
+    def add(self, session_id, user_id, role, content, provider=None, model=None, elapsed_ms=None):
+        if _use_supabase():
+            return get_client().insert("chat_messages", {
+                "session_id": session_id, "user_id": user_id, "role": role,
+                "content": content, "provider": provider, "model": model,
+                "elapsed_ms": elapsed_ms,
+            })
+        self.db.execute(
+            "INSERT INTO messages (session_id, user_id, ts, role, content, provider, model) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (session_id, user_id, time.time(), role, content, provider, model)
+        )
+        self.db.commit()
+
+    def history(self, session_id, user_id, limit=50):
+        if _use_supabase():
+            rows = get_client().select("chat_messages",
+                filters={"session_id": f"eq.{session_id}", "user_id": f"eq.{user_id}"},
+                order="ts.asc", limit=limit)
+            return [{"role": r["role"], "content": r["content"]} for r in (rows or [])]
+        cur = self.db.execute(
+            "SELECT role, content FROM messages WHERE session_id=? AND user_id=? ORDER BY ts ASC LIMIT ?",
+            (session_id, user_id, limit)
+        )
+        return [{"role": r[0], "content": r[1]} for r in cur.fetchall()]
+
+    def list_sessions(self, user_id, limit=50):
+        if _use_supabase():
+            rows = get_client().select("chat_sessions",
+                filters={"user_id": f"eq.{user_id}"},
+                order="created_at.desc", limit=limit)
+            return [{"id": r["id"], "title": r["title"], "created": r["created_at"]} for r in (rows or [])]
+        cur = self.db.execute(
+            "SELECT id, created, title FROM sessions WHERE user_id=? ORDER BY created DESC LIMIT ?",
+            (user_id, limit)
+        )
+        return [{"id": r[0], "created": r[1], "title": r[2]} for r in cur.fetchall()]
+
+
+# ═══════════════════════════════════════════════════════════
+#  Audit
+# ═══════════════════════════════════════════════════════════
+class AuditRepo:
+    def __init__(self):
+        if not _use_supabase():
+            self.db = sqlite3.connect(Config.DB_DIR / "audit.db", check_same_thread=False)
+            self.db.execute("""
+            CREATE TABLE IF NOT EXISTS audit_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL, event TEXT,
+                actor TEXT, user_id TEXT, payload TEXT
+            );""")
+
+    def log(self, event, payload=None, user_id=None, actor="user"):
+        if _use_supabase():
+            return get_client().insert("audit_log", {
+                "user_id": user_id, "event": event, "actor": actor,
+                "payload": payload or {},
+            })
+        self.db.execute(
+            "INSERT INTO audit_log (ts, event, actor, user_id, payload) VALUES (?, ?, ?, ?, ?)",
+            (time.time(), event, actor, user_id, json.dumps(payload or {}, default=str))
+        )
+        self.db.commit()
+
+    def recent(self, user_id, limit=100, prefix=None):
+        if _use_supabase():
+            f = {"user_id": f"eq.{user_id}"}
+            if prefix:
+                f["event"] = f"like.{prefix}%"
+            rows = get_client().select("audit_log", filters=f,
+                order="ts.desc", limit=limit)
+            return rows or []
+        if prefix:
+            cur = self.db.execute(
+                "SELECT ts, event, actor, payload FROM audit_log WHERE user_id=? AND event LIKE ? ORDER BY ts DESC LIMIT ?",
+                (user_id, prefix + "%", limit))
+        else:
+            cur = self.db.execute(
+                "SELECT ts, event, actor, payload FROM audit_log WHERE user_id=? ORDER BY ts DESC LIMIT ?",
+                (user_id, limit))
+        return [{"ts": r[0], "event": r[1], "actor": r[2], "payload": json.loads(r[3])} for r in cur.fetchall()]
+
+
+# ═══════════════════════════════════════════════════════════
+#  Findings
+# ═══════════════════════════════════════════════════════════
+class FindingsRepo:
+    def add(self, user_id, title, severity, description=None, evidence=None,
+            engagement=None, cvss=None, cve_ids=None, mitre=None):
+        if _use_supabase():
+            return get_client().insert("findings", {
+                "user_id": user_id, "title": title, "severity": severity,
+                "description": description, "evidence": evidence or {},
+                "engagement": engagement, "cvss": cvss,
+                "cve_ids": cve_ids or [], "mitre_tactics": mitre or [],
+            })
+        return None  # local fallback not implemented yet
+
+    def list(self, user_id, status=None, severity=None, limit=100):
+        if _use_supabase():
+            f = {"user_id": f"eq.{user_id}"}
+            if status:   f["status"] = f"eq.{status}"
+            if severity: f["severity"] = f"eq.{severity}"
+            return get_client().select("findings", filters=f,
+                order="created_at.desc", limit=limit) or []
+        return []
+
+
+# Singletons
+chat_repo = ChatRepo()
+audit_repo = AuditRepo()
+findings_repo = FindingsRepo()

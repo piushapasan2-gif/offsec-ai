@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>OffSec AI 2025 — Login</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<link rel="stylesheet" href="/css/main.css" />
+<style>
+  body { display: flex; align-items: center; justify-content: center; }
+  .login-box {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    padding: 32px;
+    width: 380px;
+    box-shadow: 0 0 40px rgba(0,255,156,0.2);
+    z-index: 5; position: relative;
+  }
+  .login-box h1 { color: var(--neon); margin: 0 0 4px; font-size: 22px; }
+  .login-box .sub { color: var(--muted); font-size: 11px; margin-bottom: 20px; letter-spacing: 1px; }
+  .login-box label { display: block; color: var(--cyan); font-size: 11px; margin: 12px 0 4px; letter-spacing: 1px; }
+  .login-box input { width: 100%; padding: 10px; background: var(--bg); border: 1px solid var(--border); color: var(--text); font-family: var(--font); font-size: 13px; }
+  .login-box input:focus { outline: none; border-color: var(--neon); }
+  .login-box button { width: 100%; padding: 12px; margin-top: 18px; background: linear-gradient(90deg, var(--neon-dim), var(--neon)); color: var(--bg); border: none; font-family: var(--font); font-weight: 700; letter-spacing: 2px; cursor: pointer; }
+  .login-box button:hover { box-shadow: 0 0 24px rgba(0,255,156,0.6); }
+  .login-box .toggle { color: var(--muted); font-size: 11px; text-align: center; margin-top: 14px; cursor: pointer; }
+  .login-box .toggle:hover { color: var(--neon); }
+  .login-box .error { color: var(--red); font-size: 11px; margin-top: 8px; min-height: 14px; }
+  .ascii { color: var(--neon); font-size: 10px; line-height: 1.1; text-align: center; margin-bottom: 18px; opacity: 0.7; }
+</style>
+</head>
+<body>
+<canvas id="matrix" style="position:fixed;inset:0;z-index:0;opacity:0.1;"></canvas>
+
+<div class="login-box">
+  <pre class="ascii">
+   ___   __  __ _____           _    ___
+  / _ \ / _|/ _/ ___|  ___  ___/ \  |_ _|
+ | | | | |_| |_\___ \ / _ \/ __/ _ \  | |
+ | |_| |  _|  _|___) |  __/ (_/ ___ \ | |
+  \___/|_| |_| |____/ \___|\___/_/  \_|___|
+  </pre>
+  <h1 id="title">▎ AUTHENTICATE</h1>
+  <div class="sub">elite offensive security suite · v2025.2</div>
+
+  <form id="auth-form">
+    <label for="email">EMAIL</label>
+    <input id="email" type="email" required autocomplete="email" />
+    <label for="password">PASSWORD</label>
+    <input id="password" type="password" required minlength="6" autocomplete="current-password" />
+    <button type="submit" id="submit-btn">▶ LOGIN</button>
+    <div class="error" id="error"></div>
+  </form>
+
+  <div class="toggle" id="toggle">
+    Don't have an account? <b>Sign up</b>
+  </div>
+</div>
+
+<script>
+// Boot matrix BG
+(function() {
+  const c = document.getElementById('matrix'), x = c.getContext('2d');
+  function R() { c.width = innerWidth; c.height = innerHeight; }
+  R(); addEventListener('resize', R);
+  const ch='アイウエオ01ABCDEF<>{}[]'; const cols = Math.floor(c.width/14);
+  const d = Array(cols).fill(1);
+  setInterval(() => {
+    x.fillStyle = 'rgba(5,10,12,0.06)'; x.fillRect(0,0,c.width,c.height);
+    x.fillStyle = '#00ff9c'; x.font = '13px monospace';
+    for (let i=0; i<d.length; i++) {
+      x.fillText(ch[Math.floor(Math.random()*ch.length)], i*14, d[i]*14);
+      if (d[i]*14 > c.height && Math.random() > 0.975) d[i] = 0;
+      d[i]++;
+    }
+  }, 60);
+})();
+
+let mode = 'login';
+document.getElementById('toggle').addEventListener('click', () => {
+  mode = (mode === 'login') ? 'signup' : 'login';
+  document.getElementById('title').textContent = mode === 'login' ? '▎ AUTHENTICATE' : '▎ CREATE ACCOUNT';
+  document.getElementById('submit-btn').textContent = mode === 'login' ? '▶ LOGIN' : '▶ SIGN UP';
+  document.getElementById('toggle').innerHTML = mode === 'login'
+    ? `Don't have an account? <b>Sign up</b>`
+    : `Already have an account? <b>Log in</b>`;
+});
+
+let SUPABASE_URL, SUPABASE_ANON_KEY;
+fetch('/api/auth/config').then(r => r.json()).then(c => {
+  SUPABASE_URL = c.url; SUPABASE_ANON_KEY = c.anon_key;
+});
+
+document.getElementById('auth-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const email = document.getElementById('email').value;
+  const password = document.getElementById('password').value;
+  const err = document.getElementById('error');
+  err.textContent = '';
+  const btn = document.getElementById('submit-btn');
+  btn.disabled = true; btn.textContent = '...';
+
+  const path = mode === 'login' ? '/auth/v1/token?grant_type=password' : '/auth/v1/signup';
+  try {
+    const r = await fetch(`${SUPABASE_URL}${path}`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'apikey': SUPABASE_ANON_KEY},
+      body: JSON.stringify({email, password}),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error_description || data.msg || data.error || 'auth failed');
+
+    if (mode === 'signup' && !data.access_token) {
+      err.style.color = 'var(--neon)';
+      err.textContent = '✔ Account created. Check your email for verification, then log in.';
+      mode = 'login';
+      document.getElementById('toggle').click();
+      btn.disabled = false; btn.textContent = '▶ LOGIN';
+      return;
+    }
+    const token = data.access_token;
+    if (!token) throw new Error('no access token returned');
+    localStorage.setItem('offsec_jwt', token);
+    localStorage.setItem('offsec_refresh', data.refresh_token || '');
+    location.href = '/';
+  } catch (e2) {
+    err.style.color = 'var(--red)';
+    err.textContent = '[!] ' + e2.message;
+    btn.disabled = false;
+    btn.textContent = mode === 'login' ? '▶ LOGIN' : '▶ SIGN UP';
+  }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,31 @@
+# Secrets
+.env
+.env.local
+*.key
+*.pem
+vault/*.enc
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.venv/
+venv/
+env/
+.python-version
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Data
+logs/*.log
+database/*.db
+output/
+scratch/
+
+# OS
+.DS_Store
+Thumbs.db

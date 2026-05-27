@@ -1,0 +1,79 @@
+# Render Blueprint — deploy with one click
+# https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: offsec-ai
+    env: python
+    plan: free
+    region: oregon
+    branch: main
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    startCommand: gunicorn --worker-class eventlet -w 1 --bind 0.0.0.0:$PORT --timeout 120 wsgi:app
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: PROD
+        value: "1"
+      - key: STORAGE_BACKEND
+        value: supabase
+      - key: PYTHON_VERSION
+        value: "3.11.9"
+      - key: LOG_LEVEL
+        value: INFO
+      # ─── Secrets — set in Render Dashboard, NOT here ───
+      - key: FLASK_SECRET_KEY
+        generateValue: true
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+      - key: VAULT_MASTER_KEY
+        generateValue: true
+      # LLMs (mark as sync:false → set manually in dashboard for security)
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: GOOGLE_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: DEEPSEEK_API_KEY
+        sync: false
+      - key: MISTRAL_API_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: HUGGINGFACE_API_KEY
+        sync: false
+      - key: TOGETHER_API_KEY
+        sync: false
+      - key: COHERE_API_KEY
+        sync: false
+      - key: XAI_API_KEY
+        sync: false
+      # Intel
+      - key: SHODAN_API_KEY
+        sync: false
+      - key: OTX_API_KEY
+        sync: false
+      - key: ABUSEIPDB_API_KEY
+        sync: false
+      - key: URLSCAN_API_KEY
+        sync: false
+      - key: IPINFO_API_KEY
+        sync: false
+      - key: NVD_API_KEY
+        sync: false
+      - key: FULLHUNT_API_KEY
+        sync: false
+      - key: ZOOMEYE_API_KEY
+        sync: false
+      - key: LEAKIX_API_KEY
+        sync: false
+      - key: GITHUB_TOKEN
+        sync: false
+      - key: DISCORD_WEBHOOK_URL
+        sync: false
