@@ -67,58 +67,68 @@ let CURRENT_USER = null;
 // ─── Boot ───
 async function boot() {
   // Identity
-  const meR = await api('/api/auth/me');
-  if (!meR) return;
-  const me = await meR.json();
-  CURRENT_USER = me.user;
+  try {
+    const meR = await api('/api/auth/me');
+    if (!meR) return;
+    const me = await meR.json();
+    CURRENT_USER = me.user;
+  } catch(e) { console.warn('auth/me failed:', e); }
 
   // LLMs
-  const llm = await (await api('/api/llm/status')).json();
-  const llmList = document.getElementById('llm-list');
-  const prefer = document.getElementById('prefer');
-  llmList.innerHTML = '';
-  for (const [name, ok] of Object.entries(llm.all_keys)) {
-    const row = document.createElement('div');
-    row.className = 'provider-row';
-    row.innerHTML = `<span>${name}</span><span class="${ok ? 'ok' : 'ko'}">${ok ? '✔' : '✘'}</span>`;
-    llmList.appendChild(row);
-    if (ok) {
-      const opt = document.createElement('option');
-      opt.value = name; opt.textContent = name;
-      prefer.appendChild(opt);
+  try {
+    const llm = await (await api('/api/llm/status')).json();
+    const llmList = document.getElementById('llm-list');
+    const prefer = document.getElementById('prefer');
+    llmList.innerHTML = '';
+    for (const [name, ok] of Object.entries(llm.all_keys)) {
+      const row = document.createElement('div');
+      row.className = 'provider-row';
+      row.innerHTML = `<span>${name}</span><span class="${ok ? 'ok' : 'ko'}">${ok ? '✔' : '✘'}</span>`;
+      llmList.appendChild(row);
+      if (ok) {
+        const opt = document.createElement('option');
+        opt.value = name; opt.textContent = name;
+        prefer.appendChild(opt);
+      }
     }
-  }
-  document.getElementById('provider-info').textContent =
-    `${CURRENT_USER.email || 'user'} · ${llm.configured.length} LLMs`;
+    document.getElementById('provider-info').textContent =
+      `${(CURRENT_USER && CURRENT_USER.email) || 'user'} · ${llm.configured.length} LLMs`;
+  } catch(e) { console.warn('llm/status failed:', e); }
 
   // Intel
-  const intel = await (await api('/api/intel/status')).json();
-  const intelList = document.getElementById('intel-list');
-  const intelProv = document.getElementById('intel-provider');
-  intelList.innerHTML = '';
-  for (const [name, ok] of Object.entries(intel)) {
-    const row = document.createElement('div');
-    row.className = 'provider-row';
-    row.innerHTML = `<span>${name}</span><span class="${ok ? 'ok' : 'ko'}">${ok ? '✔' : '✘'}</span>`;
-    intelList.appendChild(row);
-    if (ok) {
-      const opt = document.createElement('option');
-      opt.value = name; opt.textContent = name;
-      intelProv.appendChild(opt);
+  try {
+    const intel = await (await api('/api/intel/status')).json();
+    const intelList = document.getElementById('intel-list');
+    const intelProv = document.getElementById('intel-provider');
+    intelList.innerHTML = '';
+    for (const [name, ok] of Object.entries(intel)) {
+      const row = document.createElement('div');
+      row.className = 'provider-row';
+      row.innerHTML = `<span>${name}</span><span class="${ok ? 'ok' : 'ko'}">${ok ? '✔' : '✘'}</span>`;
+      intelList.appendChild(row);
+      if (ok && INTEL_ACTIONS[name]) {
+        const opt = document.createElement('option');
+        opt.value = name; opt.textContent = name;
+        intelProv.appendChild(opt);
+      }
     }
-  }
-  updateIntelActions();
-  intelProv.addEventListener('change', updateIntelActions);
+    updateIntelActions();
+    intelProv.addEventListener('change', updateIntelActions);
+  } catch(e) { console.warn('intel/status failed:', e); }
 
   // Scope
-  const scope = await (await api('/api/scope')).json();
-  document.getElementById('scope-info').innerHTML =
-    `mode: <b>${scope.mode}</b><br>engagement: ${scope.current || '<i>none</i>'}`;
+  try {
+    const scope = await (await api('/api/scope')).json();
+    document.getElementById('scope-info').innerHTML =
+      `mode: <b>${scope.mode}</b><br>engagement: ${scope.current || '<i>none</i>'}`;
+  } catch(e) { document.getElementById('scope-info').textContent = 'unavailable'; }
 
   // Quotas
-  const q = await (await api('/api/quotas')).json();
-  document.getElementById('quotas').innerHTML = Object.entries(q)
-    .map(([k,v]) => `${k}: ${v.used}/${v.limit}`).join('<br>') || '<i>no usage yet</i>';
+  try {
+    const q = await (await api('/api/quotas')).json();
+    document.getElementById('quotas').innerHTML = Object.entries(q)
+      .map(([k,v]) => `${k}: ${v.used}/${v.limit}`).join('<br>') || '<i>no usage yet</i>';
+  } catch(e) { document.getElementById('quotas').textContent = '—'; }
 }
 
 const INTEL_ACTIONS = {

@@ -15,7 +15,6 @@ def _e(k, d=None):
 class Config:
     BASE_DIR = BASE_DIR
     LOG_DIR = BASE_DIR / "logs"
-    DB_DIR = BASE_DIR / "database"
     OUTPUT_DIR = BASE_DIR / "output"
     VAULT_DIR = BASE_DIR / "backend" / "vault"
 
@@ -24,6 +23,10 @@ class Config:
     SECRET_KEY = _e("FLASK_SECRET_KEY") or os.urandom(32).hex()
     LOG_LEVEL = _e("LOG_LEVEL", "INFO")
     PROD = (_e("PROD") or "0") == "1"
+
+    # DB dir — override via DB_DIR env var (useful when project dir has filesystem issues)
+    _db_override = _e("DB_DIR")
+    DB_DIR = Path(_db_override) if _db_override else BASE_DIR / "database"
 
     LLM_KEYS = {
         "openai":      _e("OPENAI_API_KEY"),

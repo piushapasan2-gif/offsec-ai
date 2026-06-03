@@ -1,6 +1,6 @@
-"""OffSec AI 2025 — Flask app + Socket.IO with Supabase auth."""
+"""OffSec AI 2025 - Flask app + Socket.IO with Supabase auth."""
 import os
-from flask import Flask, request, jsonify, send_from_directory, g, redirect
+from flask import Flask, request, jsonify, send_from_directory, g
 from flask_socketio import SocketIO, emit, disconnect
 
 from backend.config import Config
@@ -20,10 +20,10 @@ app = Flask(
     static_url_path="/static",
 )
 app.config["SECRET_KEY"] = Config.SECRET_KEY
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet")
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
 
 
-# ─── Static frontend ───
+# --- Static frontend ---
 @app.route("/")
 def index():
     return send_from_directory(FRONTEND_DIR, "index.html")
@@ -42,16 +42,14 @@ def css(fname): return send_from_directory(FRONTEND_DIR / "css", fname)
 def js(fname): return send_from_directory(FRONTEND_DIR / "js", fname)
 
 
-# ─── Health & auth config ───
+# --- Health & auth config ---
 @app.route("/health")
 def health():
-    """For Render keep-alive + UptimeRobot."""
     return jsonify({"ok": True, "service": "offsec-ai", "version": "2025.2"})
 
 
 @app.route("/api/auth/config")
 def auth_config():
-    """Frontend needs anon key + URL to talk to Supabase Auth directly."""
     return jsonify({
         "url": Config.SUPABASE_URL,
         "anon_key": Config.SUPABASE_ANON_KEY,
@@ -65,7 +63,7 @@ def me():
     return jsonify({"ok": True, "user": g.user})
 
 
-# ─── Chat ───
+# --- Chat ---
 @app.route("/api/chat", methods=["POST"])
 @require_auth
 def api_chat():
@@ -95,7 +93,7 @@ def api_session(sid):
     return jsonify({"id": sid, "messages": chat_repo.history(sid, current_user_id(), limit=200)})
 
 
-# ─── LLM ───
+# --- LLM ---
 @app.route("/api/llm/status")
 @require_auth
 def api_llm_status():
@@ -112,11 +110,18 @@ def api_llm_health():
     return jsonify(router.health_check())
 
 
-# ─── Intel ───
+# --- Intel ---
 @app.route("/api/intel/status")
 @require_auth
 def api_intel_status():
-    return jsonify({k: bool(v) for k, v in Config.INTEL_KEYS.items()})
+    # Map config key names to provider names used in INTEL_MAP
+    KEY_ALIAS = {"nvd": "cve"}
+    status = {}
+    for k, v in Config.INTEL_KEYS.items():
+        alias = KEY_ALIAS.get(k, k)
+        status[alias] = bool(v)
+    status["github"] = bool(Config.GITHUB_TOKEN)
+    return jsonify(status)
 
 
 INTEL_MAP = {
@@ -155,7 +160,7 @@ def api_intel_call(provider):
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
-# ─── Scope ───
+# --- Scope ---
 @app.route("/api/scope", methods=["GET", "POST"])
 @require_auth
 def api_scope():
@@ -171,7 +176,7 @@ def api_scope():
     return jsonify(scope_guard.current_scope())
 
 
-# ─── Audit & Quotas ───
+# --- Audit & Quotas ---
 @app.route("/api/audit")
 @require_auth
 def api_audit():
@@ -185,7 +190,7 @@ def api_quotas():
     return jsonify(quota_manager.status())
 
 
-# ─── Findings ───
+# --- Findings ---
 @app.route("/api/findings", methods=["GET", "POST"])
 @require_auth
 def api_findings():
@@ -205,10 +210,9 @@ def api_findings():
                                       severity=request.args.get("severity")))
 
 
-# ─── Socket.IO ───
+# --- Socket.IO ---
 @socketio.on("connect")
 def on_connect(auth=None):
-    # Auth via query: ?token=...
     token = (auth or {}).get("token") if isinstance(auth, dict) else None
     if not token:
         token = request.args.get("token")
@@ -224,7 +228,14 @@ def on_connect(auth=None):
         disconnect()
 
 
-# Error handler — never leak stack traces in prod
+from werkzeug.exceptions import HTTPException
+
+
+@app.errorhandler(HTTPException)
+def handle_http_error(e):
+    return jsonify({"ok": False, "error": e.description, "code": e.code}), e.code
+
+
 @app.errorhandler(Exception)
 def handle_error(e):
     log.exception(e)
