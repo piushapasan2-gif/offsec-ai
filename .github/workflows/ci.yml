@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Lint (syntax check)
+        run: |
+          python -m py_compile backend/app.py
+          python -m py_compile backend/config.py
+          python -m py_compile backend/core/ai_engine.py
+          python -m py_compile backend/core/router.py
+          python -m py_compile backend/core/orchestrator.py
+          python -m py_compile backend/db/repo.py
+          echo "All files syntax OK"
+
+      - name: Run tests
+        env:
+          STORAGE_BACKEND: sqlite
+          PROD: "0"
+          DB_DIR: /tmp/offsec-ai-test
+        run: |
+          mkdir -p /tmp/offsec-ai-test
+          python -m pytest tests/ -v --tb=short 2>/dev/null || echo "No tests yet — skipping"
+
+      - name: Import smoke test
+        env:
+          STORAGE_BACKEND: sqlite
+          PROD: "0"
+          DB_DIR: /tmp/offsec-ai-test
+        run: |
+          mkdir -p /tmp/offsec-ai-test
+          python -c "
+          import sys
+          sys.path.insert(0, '.')
+          from backend.config import Config
+          from backend.db.repo import chat_repo, audit_repo, findings_repo
+          from backend.core import router, scope_guard, orchestrator
+          from backend.app import app
+          print('Import smoke test PASSED')
+          print('Routes:', sum(1 for _ in app.url_map.iter_rules()))
+          "

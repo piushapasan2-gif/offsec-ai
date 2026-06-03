@@ -7,129 +7,172 @@
 ╚══════════════════════════════════════════════════════════╝
 ```
 
-## ⚡ Quick Start
+![CI](https://github.com/YOUR_USERNAME/offsec-ai/actions/workflows/ci.yml/badge.svg)
+![Python](https://img.shields.io/badge/python-3.11+-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
+
+---
+
+## ⚡ Install on Kali Linux (one command)
 
 ```bash
-# Windows
-run.bat
-
-# Linux/macOS
-chmod +x run.sh && ./run.sh
+curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/offsec-ai/main/install.sh | sudo bash
 ```
 
-Opens at **http://127.0.0.1:7777**.
+Then edit your keys and run:
+
+```bash
+nano /opt/offsec-ai/.env
+cd /opt/offsec-ai && ./run.sh
+```
+
+Opens at **http://127.0.0.1:7777**
+
+---
+
+## 🖥️ Quick Start (manual)
+
+```bash
+git clone https://github.com/YOUR_USERNAME/offsec-ai.git
+cd offsec-ai
+cp .env.example .env      # paste your API keys
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+./run.sh
+```
+
+Windows:
+```cmd
+run.bat
+```
+
+---
 
 ## 🧠 What's Inside
 
-### Multi-LLM Brain
-10+ LLM providers with automatic task-aware routing + fallback:
-- **Anthropic Claude** · **OpenAI** · **Google Gemini** · **Groq** · **DeepSeek**
-- **Mistral** · **OpenRouter** · **HuggingFace** · **Together** · **Cohere**
-- **Perplexity** · **xAI Grok**
+### Multi-LLM Brain (10+ providers, auto-routing)
 
-Router picks the best model for the task:
 | Task | Preferred providers |
 |------|---------------------|
-| Code/exploit dev | Claude → DeepSeek → OpenAI → Groq |
+| Code / exploit dev | Claude → DeepSeek → OpenAI → Groq |
 | CTF solve | Claude → DeepSeek → OpenAI → Groq |
-| Fast/cheap | Groq → DeepSeek → Gemini |
+| Fast / cheap | Groq → DeepSeek → Gemini |
 | Web-grounded | Perplexity → OpenRouter |
 | Long context | Gemini (2M) → Claude |
 
-### Intelligence APIs
-- **Shodan** · **VirusTotal** · **AlienVault OTX** · **AbuseIPDB**
-- **URLScan** · **IPInfo** · **NVD CVE** · **GitHub** · **FullHunt** · **LeakIX**
+Providers: **Anthropic · OpenAI · Google Gemini · Groq · DeepSeek · Mistral · OpenRouter · HuggingFace · Together · Cohere · Perplexity · xAI Grok**
 
-All wrapped with: caching, quota tracking, audit logging.
+### Security Intelligence APIs
 
-### Safety / Reliability Layers
-- **`core/scope_guard.py`** — enforces in-scope-only targeting (strict / permissive / lab modes)
-- **`vault/credentials.py`** — encrypted (Fernet) credential vault for engagement creds
-- **`utils/audit_log.py`** — immutable SQLite audit trail
-- **`core/cache.py`** — SHA-keyed response cache (saves $$$ on LLM + intel calls)
-- **`utils/quota_manager.py`** — per-provider quota tracking
-- **`utils/retry.py`** — exponential-backoff retry decorator
+| Provider | Capabilities |
+|----------|-------------|
+| Shodan | Host info, banner search |
+| VirusTotal | IP/domain/hash/URL analysis |
+| AlienVault OTX | Threat indicators, pulses |
+| AbuseIPDB | IP reputation check |
+| URLScan | URL scanning and analysis |
+| IPInfo | IP geolocation and ASN |
+| NVD CVE | CVE lookup and search |
+| GitHub | Code search, org recon |
+| FullHunt | Domain and subdomain enum |
+| LeakIX | Host and service leaks |
 
-## 🛠 Configure
+### Safety Layers
 
-API keys live in `.env`. Empty values are skipped automatically (router and intel routes detect missing keys).
+- **Scope Guard** — strict / permissive / lab modes
+- **Encrypted Vault** — Fernet-encrypted credential storage
+- **Audit Log** — immutable SQLite audit trail
+- **Response Cache** — SHA-keyed, saves API costs
+- **Quota Manager** — per-provider rate tracking
+- **Retry Logic** — exponential backoff on failures
+
+---
+
+## 🔒 Scope Modes
 
 ```bash
-cp .env.example .env
-# edit .env, paste keys for providers you have
+# Lab mode — only private IPs + .htb/.thm/.local
+POST /api/scope  { "mode": "lab" }
+
+# Strict — only your defined targets
+POST /api/scope  { "mode": "strict", "in_scope": ["10.0.0.0/24", "*.acme.com"] }
+
+# Permissive — no restrictions (dev/research)
+POST /api/scope  { "mode": "permissive" }
 ```
 
-## 📁 Layout
+---
+
+## 📁 Structure
 
 ```
 offsec-ai/
 ├── backend/
-│   ├── core/
-│   │   ├── ai_engine.py       # 10+ LLM adapters
-│   │   ├── router.py          # Smart task→provider routing
-│   │   ├── orchestrator.py    # Top-level handler
-│   │   ├── memory.py          # SQLite chat history
-│   │   ├── scope_guard.py     # Authorization enforcement
-│   │   └── cache.py           # Response cache
-│   ├── intelligence/          # Shodan, VT, OTX, URLScan, etc.
-│   ├── vault/                 # Encrypted credential storage
-│   ├── utils/                 # Logger, audit, quotas, retry
-│   ├── notifications/         # Discord, Slack
-│   ├── modules/               # Attack modules (Phase 4+)
-│   ├── agents/                # Multi-agent system (Phase 3)
-│   ├── app.py                 # Flask app
-│   └── config.py
-├── frontend/                  # Vanilla HTML/CSS/JS chat UI
-├── database/                  # SQLite: chat, audit, cache, quotas, scope
-├── logs/                      # Rotating logs (5MB × 5)
+│   ├── core/          # AI engine, router, orchestrator, scope guard, cache
+│   ├── intelligence/  # Shodan, VT, OTX, URLScan, CVE, GitHub, etc.
+│   ├── agents/        # Multi-agent system (Phase 3)
+│   ├── modules/       # Attack modules & tool execution (Phase 4+)
+│   ├── vault/         # Encrypted credential storage
+│   ├── utils/         # Logger, audit, quotas, retry
+│   ├── notifications/ # Discord, Slack
+│   └── app.py         # Flask + Socket.IO
+├── frontend/          # Vanilla HTML/CSS/JS terminal UI
+├── database/          # SQLite: chat, audit, findings
+├── scripts/           # Systemd service file
 ├── tests/
-├── docs/
-├── .env / .env.example
+├── install.sh         # Kali one-liner installer
+├── uninstall.sh
+├── run.sh / run.bat / run.py
 ├── requirements.txt
-├── run.py / run.bat / run.sh
-└── README.md
+├── render.yaml        # One-click Render deploy
+└── Dockerfile
 ```
+
+---
 
 ## 🎯 API Endpoints
 
 | Method | Endpoint | Purpose |
 |--------|----------|---------|
-| `POST` | `/api/chat` | Send prompt to AI router |
-| `GET`  | `/api/sessions` | List chat sessions |
-| `GET`  | `/api/llm/status` | Configured LLM providers |
-| `POST` | `/api/llm/healthcheck` | Ping each LLM |
-| `GET`  | `/api/intel/status` | Configured intel APIs |
-| `POST` | `/api/intel/<provider>` | Call intel API |
-| `GET`/`POST` | `/api/scope` | Read/update engagement scope |
-| `GET`  | `/api/audit` | Recent audit events |
-| `GET`  | `/api/quotas` | Quota usage |
+| `POST` | `/api/chat` | Send prompt, get AI response |
+| `GET` | `/api/sessions` | List chat sessions |
+| `GET` | `/api/llm/status` | LLM provider health |
+| `POST` | `/api/llm/healthcheck` | Ping all LLMs |
+| `GET` | `/api/intel/status` | Intel API status |
+| `POST` | `/api/intel/<provider>` | Run intel query |
+| `GET/POST` | `/api/scope` | Read / update scope |
+| `GET` | `/api/audit` | Recent audit events |
+| `GET/POST` | `/api/findings` | Findings manager |
 
-## 🔒 Scope Modes
+---
 
-- **permissive** (default) — no scope enforcement (use for lab/dev)
-- **strict** — only targets in current engagement allowed
-- **lab** — only private IPs + `.local`/`.lab`/`.test`/`.htb`/`.thm` TLDs allowed
+## 🗺 Roadmap
 
-Set via `POST /api/scope`:
-```json
-{
-  "mode": "strict",
-  "engagement": "client-acme",
-  "in_scope": ["*.acme.com", "10.0.0.0/24"],
-  "blocklist": ["prod.acme.com"]
-}
-```
+- ✅ Phase 1 — Foundation (Flask, auth, DB, logging)
+- ✅ Phase 2 — AI Engine (12 LLMs, smart router)
+- ⏳ Phase 3 — Agents (recon, exploit, CTF, report)
+- ⏳ Phase 4 — Kali tool execution (nmap, gobuster, sqlmap)
+- ⏳ Phase 5 — Findings + PDF reports
+- ⏳ Phase 6 — Dashboard + engagements
+- ⏳ Phase 7 — Payload generator + dark web monitoring
 
-## 🗺 Build Phases
+---
 
-- ✅ **Phase 1** — Foundation
-- ✅ **Phase 2** — AI Engine + Router
-- ⏳ **Phase 3** — Agents (recon, exploit, ctf, report, coordinator)
-- ⏳ **Phase 4** — Attack modules
-- ⏳ **Phase 5** — More intel + dark-web monitoring
-- ⏳ **Phase 6** — Reporting + PDF
-- ⏳ **Phase 7** — Frontend polish + dashboard
+## 🚀 Deploy to Render
 
-## ⚠ Legal
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy)
+
+Or manually:
+1. Fork this repo
+2. Go to [render.com](https://render.com) → New Web Service → connect repo
+3. Render detects `render.yaml` automatically
+4. Add your API keys in the Environment tab
+5. Deploy
+
+---
+
+## ⚠️ Legal
 
 Authorized testing only. Stay in scope. Document everything.
+This tool is for professional penetration testers, CTF players, and security researchers.

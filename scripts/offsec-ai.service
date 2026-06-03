@@ -1,0 +1,16 @@
+[Unit]
+Description=OffSec AI 2025 — Multi-LLM Pentesting Assistant
+After=network.target
+
+[Service]
+Type=simple
+User=kali
+WorkingDirectory=/opt/offsec-ai
+ExecStart=/opt/offsec-ai/.venv/bin/gunicorn --worker-class gthread -w 1 --threads 4 --bind 127.0.0.1:7777 --timeout 120 wsgi:app
+Restart=on-failure
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=/opt/offsec-ai/.env
+
+[Install]
+WantedBy=multi-user.target
