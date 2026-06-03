@@ -331,6 +331,38 @@ def api_findings():
                                       severity=request.args.get("severity")))
 
 
+
+# --- Agents ---
+@app.route("/api/agents/run", methods=["POST"])
+@require_auth
+def api_agents_run():
+    from backend.agents import coordinator
+    data = request.get_json(force=True) or {}
+    task = (data.get("task") or "").strip()
+    if not task:
+        return jsonify({"ok": False, "error": "task required"}), 400
+    agent_name = data.get("agent", "auto")
+    context = {"user_id": current_user_id(),
+               "target": data.get("target", ""),
+               "engagement": data.get("engagement", "")}
+    result = coordinator.run(task, agent_name=agent_name, context=context)
+    audit_repo.log("agent.run", {"agent": result.get("agent"), "task": task[:80]},
+                   user_id=current_user_id())
+    return jsonify(result)
+
+
+@app.route("/api/agents/list")
+@require_auth
+def api_agents_list():
+    return jsonify([
+        {"name": "auto",    "description": "Auto-select best agent for the task"},
+        {"name": "recon",   "description": "OSINT + target intelligence specialist"},
+        {"name": "exploit", "description": "Vulnerability research + exploit dev"},
+        {"name": "ctf",     "description": "CTF challenge solver (pwn/web/crypto/rev/forensics)"},
+        {"name": "report",  "description": "Generates pentest report from saved findings"},
+    ])
+
+
 # --- Socket.IO ---
 @socketio.on("connect")
 def on_connect(auth=None):

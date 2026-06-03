@@ -82,6 +82,7 @@
       <button class="tab active" data-tab="intel">INTEL</button>
       <button class="tab" data-tab="audit">AUDIT</button>
       <button class="tab" data-tab="console">CONSOLE</button>
+      <button class="tab" data-tab="agents">AGENTS</button>
     </div>
     <div id="tab-intel" class="tab-pane active">
       <!-- Intel sub-tabs -->
@@ -115,6 +116,21 @@
         <button id="intel-history-refresh" class="btn-sm" style="margin-bottom:6px;">refresh</button>
         <div id="intel-history-list"></div>
       </div>
+    </div>
+    <div id="tab-agents" class="tab-pane">
+      <div style="margin-bottom:8px;">
+        <label style="font-size:10px;color:var(--muted);letter-spacing:1px;">AGENT</label>
+        <select id="agent-select" style="width:100%;margin-top:3px;"></select>
+      </div>
+      <div style="margin-bottom:6px;">
+        <label style="font-size:10px;color:var(--muted);letter-spacing:1px;">TASK</label>
+        <textarea id="agent-task" rows="3" style="width:100%;margin-top:3px;resize:vertical;"
+          placeholder="e.g. Full recon on 10.10.10.5&#10;e.g. Exploit CVE-2024-1234&#10;e.g. Solve this CTF pwn challenge…"></textarea>
+      </div>
+      <button id="agent-run" class="btn" style="width:100%;margin-bottom:10px;">▶ RUN AGENT</button>
+      <div id="agent-status" style="font-size:11px;color:var(--muted);margin-bottom:6px;"></div>
+      <div id="agent-steps" style="margin-bottom:8px;"></div>
+      <div id="agent-result"></div>
     </div>
     <div id="tab-audit" class="tab-pane">
       <h3>Audit Log</h3>

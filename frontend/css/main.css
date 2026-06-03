@@ -246,3 +246,40 @@ aside, section { background: var(--bg-alt); overflow: hidden; }
   font-size: 11px;
   line-height: 1.6;
 }
+
+/* ─── MVP 4 — Agents tab ─────────────── */
+.agent-step {
+  font-size: 10px;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  letter-spacing: 0.5px;
+}
+.step-name {
+  color: var(--cyan);
+  font-weight: bold;
+  margin-right: 6px;
+}
+.agent-result-card {
+  border: 1px solid var(--neon-dim);
+  border-left: 2px solid var(--neon);
+  background: rgba(0,255,156,0.03);
+  margin-top: 6px;
+}
+.agent-result-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--neon);
+  letter-spacing: 1px;
+}
+.agent-result-body {
+  padding: 10px;
+  font-size: 12px;
+  line-height: 1.7;
+  max-height: 400px;
+  overflow-y: auto;
+}

@@ -670,3 +670,89 @@ async function loadIntelHistory() {
   }
 }
 document.getElementById('intel-history-refresh').addEventListener('click', loadIntelHistory);
+
+
+// ─── Agents tab ──────────────────────────
+async function loadAgents() {
+  try {
+    const r = await api('/api/agents/list');
+    if (!r) return;
+    const agents = await r.json();
+    const sel = document.getElementById('agent-select');
+    sel.innerHTML = '';
+    agents.forEach(a => {
+      const opt = document.createElement('option');
+      opt.value = a.name;
+      opt.textContent = `${a.name.toUpperCase()} — ${a.description}`;
+      sel.appendChild(opt);
+    });
+  } catch (e) { console.warn('agents/list:', e); }
+}
+
+document.getElementById('agent-run').addEventListener('click', async () => {
+  const task = document.getElementById('agent-task').value.trim();
+  if (!task) return;
+  const agent = document.getElementById('agent-select').value;
+  const status = document.getElementById('agent-status');
+  const stepsEl = document.getElementById('agent-steps');
+  const resultEl = document.getElementById('agent-result');
+
+  status.textContent = `Running ${agent} agent…`;
+  stepsEl.innerHTML = '';
+  resultEl.innerHTML = '';
+  document.getElementById('agent-run').disabled = true;
+
+  try {
+    const r = await api('/api/agents/run', {
+      method: 'POST',
+      body: JSON.stringify({ task, agent }),
+    });
+    const data = await r.json();
+
+    // Show steps
+    (data.steps || []).forEach(s => {
+      const div = document.createElement('div');
+      div.className = 'agent-step';
+      div.innerHTML = `<span class="step-name">${s.step}</span> ` +
+        Object.entries(s)
+          .filter(([k]) => k !== 'step')
+          .map(([k, v]) => `<span class="muted">${k}:</span> <b>${String(v).slice(0, 60)}</b>`)
+          .join(' · ');
+      stepsEl.appendChild(div);
+    });
+
+    if (data.ok) {
+      status.textContent = `✔ ${data.agent} agent completed`;
+      // Render result in a card
+      resultEl.innerHTML = `
+        <div class="agent-result-card">
+          <div class="agent-result-header">
+            <span>${(data.agent || 'agent').toUpperCase()} RESULT</span>
+            <button class="btn-sm" onclick="sendAgentToChat('${encodeURIComponent(data.result || '')}')">send to chat ▶</button>
+          </div>
+          <div class="agent-result-body">${renderMarkdown(data.result || '')}</div>
+        </div>`;
+    } else {
+      status.textContent = `✘ Error: ${data.error || 'unknown'}`;
+    }
+  } catch (e) {
+    status.textContent = `✘ Network error: ${e.message}`;
+  } finally {
+    document.getElementById('agent-run').disabled = false;
+  }
+});
+
+function sendAgentToChat(encoded) {
+  const text = decodeURIComponent(encoded);
+  // Switch to chat tab view and pre-fill a summary prompt
+  document.getElementById('prompt').value =
+    `Summarize and expand on this agent finding:\n\n${text.slice(0, 1000)}`;
+  document.getElementById('prompt').focus();
+}
+
+// Load agents list when AGENTS tab clicked
+document.querySelectorAll('.tab').forEach(t => {
+  if (t.dataset.tab === 'agents') {
+    t.addEventListener('click', loadAgents);
+  }
+});
