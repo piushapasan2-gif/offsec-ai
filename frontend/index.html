@@ -84,12 +84,37 @@
       <button class="tab" data-tab="console">CONSOLE</button>
     </div>
     <div id="tab-intel" class="tab-pane active">
-      <h3>Quick Intel Lookup</h3>
-      <select id="intel-provider"></select>
-      <select id="intel-action"></select>
-      <input id="intel-arg" placeholder="ip / domain / hash / query" />
-      <button id="intel-run" class="btn">RUN</button>
-      <pre id="intel-output" class="output"></pre>
+      <!-- Intel sub-tabs -->
+      <div class="intel-subtabs">
+        <button class="itab active" data-itab="scan">SCAN ALL</button>
+        <button class="itab" data-itab="lookup">LOOKUP</button>
+        <button class="itab" data-itab="history">HISTORY</button>
+      </div>
+
+      <!-- SCAN -->
+      <div id="itab-scan" class="itab-pane active">
+        <div class="bulk-bar">
+          <input id="bulk-target" placeholder="IP address, domain, or hash…" />
+          <button id="bulk-run" class="btn">▶ SCAN</button>
+        </div>
+        <div id="bulk-status" class="muted" style="font-size:11px;margin:4px 0;"></div>
+        <div id="bulk-results"></div>
+      </div>
+
+      <!-- LOOKUP -->
+      <div id="itab-lookup" class="itab-pane">
+        <select id="intel-provider"></select>
+        <select id="intel-action"></select>
+        <input id="intel-arg" placeholder="ip / domain / hash / query" />
+        <button id="intel-run" class="btn">RUN</button>
+        <pre id="intel-output" class="output"></pre>
+      </div>
+
+      <!-- HISTORY -->
+      <div id="itab-history" class="itab-pane">
+        <button id="intel-history-refresh" class="btn-sm" style="margin-bottom:6px;">refresh</button>
+        <div id="intel-history-list"></div>
+      </div>
     </div>
     <div id="tab-audit" class="tab-pane">
       <h3>Audit Log</h3>

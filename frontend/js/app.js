@@ -485,3 +485,188 @@ function logout() {
 window.offsecLogout = logout;
 
 boot();
+
+
+// ─── Intel sub-tabs ──────────────────────
+document.querySelectorAll('.itab').forEach(t => {
+  t.addEventListener('click', () => {
+    document.querySelectorAll('.itab').forEach(x => x.classList.remove('active'));
+    document.querySelectorAll('.itab-pane').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    document.getElementById('itab-' + t.dataset.itab).classList.add('active');
+    if (t.dataset.itab === 'history') loadIntelHistory();
+  });
+});
+
+// ─── Bulk scan ───────────────────────────
+document.getElementById('bulk-run').addEventListener('click', runBulkScan);
+document.getElementById('bulk-target').addEventListener('keydown', e => {
+  if (e.key === 'Enter') runBulkScan();
+});
+
+async function runBulkScan() {
+  const target = document.getElementById('bulk-target').value.trim();
+  if (!target) return;
+
+  const status = document.getElementById('bulk-status');
+  const results = document.getElementById('bulk-results');
+  status.textContent = `scanning ${target} across all configured intel APIs…`;
+  results.innerHTML = '<div class="muted" style="font-size:11px;padding:8px;">running parallel queries…</div>';
+
+  try {
+    const r = await api('/api/intel/bulk', {
+      method: 'POST',
+      body: JSON.stringify({ target }),
+    });
+    const data = await r.json();
+    if (!data.ok) {
+      status.textContent = '[!] ' + (data.error || 'scan failed');
+      results.innerHTML = '';
+      return;
+    }
+
+    const count = Object.keys(data.results).length;
+    status.textContent = `${count} provider${count !== 1 ? 's' : ''} returned results for ${target} (${data.type})`;
+    results.innerHTML = '';
+
+    if (count === 0) {
+      results.innerHTML = '<div class="muted" style="padding:8px;font-size:11px;">No configured intel APIs matched this target type.</div>';
+      return;
+    }
+
+    for (const [provider, result] of Object.entries(data.results)) {
+      results.appendChild(buildCard(provider, result, target, data.type));
+    }
+  } catch (e) {
+    status.textContent = '[!] network error: ' + e.message;
+    results.innerHTML = '';
+  }
+}
+
+function buildCard(provider, result, target, targetType) {
+  const card = document.createElement('div');
+  card.className = 'intel-card';
+
+  const ok = result.ok;
+  const summary = ok ? summariseResult(provider, result.data) : result.error;
+
+  card.innerHTML = `
+    <div class="intel-card-header">
+      <span class="intel-provider-name">${provider.toUpperCase()}</span>
+      <span class="intel-card-status ${ok ? 'ok' : 'ko'}">${ok ? '✔' : '✘ error'}</span>
+    </div>
+    <div class="intel-card-summary">${summary}</div>
+    <div class="intel-card-actions">
+      <button class="btn-sm toggle-raw">show raw</button>
+      ${ok ? `<button class="btn-sm send-ai-btn">send to AI ▶</button>` : ''}
+    </div>
+    <pre class="intel-card-raw hidden">${ok ? JSON.stringify(result.data, null, 2) : result.error}</pre>
+  `;
+
+  card.querySelector('.toggle-raw').addEventListener('click', (e) => {
+    const pre = card.querySelector('.intel-card-raw');
+    const btn = e.target;
+    pre.classList.toggle('hidden');
+    btn.textContent = pre.classList.contains('hidden') ? 'show raw' : 'hide raw';
+  });
+
+  if (ok) {
+    card.querySelector('.send-ai-btn').addEventListener('click', () => {
+      sendIntelToAI(provider, target, targetType, result.data);
+    });
+  }
+
+  return card;
+}
+
+function summariseResult(provider, data) {
+  if (!data) return '<span class="muted">no data</span>';
+  try {
+    switch (provider) {
+      case 'shodan': {
+        const ports = (data.ports || []).join(', ') || 'none';
+        const org = data.org || data.isp || '—';
+        const country = data.country_name || '—';
+        return `<b>Org:</b> ${org} · <b>Country:</b> ${country} · <b>Ports:</b> ${ports}`;
+      }
+      case 'virustotal': {
+        const stats = data.data?.attributes?.last_analysis_stats || data.attributes?.last_analysis_stats || {};
+        const mal = stats.malicious || 0;
+        const total = Object.values(stats).reduce((a, b) => a + b, 0) || '?';
+        const rep = data.data?.attributes?.reputation ?? data.attributes?.reputation ?? '—';
+        return `<b>Malicious:</b> ${mal}/${total} · <b>Reputation:</b> ${rep}`;
+      }
+      case 'abuseipdb': {
+        const d = data.data || data;
+        const score = d.abuseConfidenceScore ?? '—';
+        const reports = d.totalReports ?? '—';
+        const country = d.countryCode || '—';
+        return `<b>Abuse score:</b> ${score}% · <b>Reports:</b> ${reports} · <b>Country:</b> ${country}`;
+      }
+      case 'ipinfo': {
+        const org = data.org || '—';
+        const city = data.city || '—';
+        const country = data.country || '—';
+        return `<b>Org:</b> ${org} · <b>Location:</b> ${city}, ${country}`;
+      }
+      case 'otx': {
+        const pulses = data.pulse_info?.count ?? data.count ?? '—';
+        const rep = data.reputation ?? '—';
+        return `<b>Pulses:</b> ${pulses} · <b>Reputation:</b> ${rep}`;
+      }
+      case 'urlscan': {
+        const results = data.results?.length ?? '—';
+        return `<b>Scan results:</b> ${results} entries found`;
+      }
+      case 'fullhunt': {
+        const subs = data.hosts?.length ?? data.subdomains?.length ?? '—';
+        return `<b>Subdomains/hosts:</b> ${subs} found`;
+      }
+      case 'leakix': {
+        const events = Array.isArray(data) ? data.length : '—';
+        return `<b>Leak events:</b> ${events} found`;
+      }
+      default:
+        return `<span class="muted">${JSON.stringify(data).slice(0, 120)}…</span>`;
+    }
+  } catch {
+    return '<span class="muted">parse error — see raw</span>';
+  }
+}
+
+function sendIntelToAI(provider, target, targetType, data) {
+  const prompt = `Analyze this ${provider.toUpperCase()} result for ${target} (${targetType}):\n\n${JSON.stringify(data, null, 2).slice(0, 3000)}\n\nWhat are the key security findings? What should I investigate next?`;
+  document.getElementById('prompt').value = prompt;
+  document.getElementById('prompt').focus();
+  // Switch to chat pane on mobile
+  document.getElementById('chat-pane').scrollIntoView({ behavior: 'smooth' });
+}
+
+// ─── Intel history ───────────────────────
+async function loadIntelHistory() {
+  const container = document.getElementById('intel-history-list');
+  container.innerHTML = '<div class="muted" style="font-size:11px;padding:4px;">loading…</div>';
+  try {
+    const r = await api('/api/intel/history');
+    const rows = await r.json();
+    if (!rows.length) {
+      container.innerHTML = '<div class="muted" style="font-size:11px;padding:4px;">No intel history yet.</div>';
+      return;
+    }
+    container.innerHTML = '';
+    rows.forEach(e => {
+      const ts = typeof e.ts === 'number'
+        ? new Date(e.ts * 1000).toLocaleString()
+        : new Date(e.ts).toLocaleString();
+      const p = typeof e.payload === 'string' ? JSON.parse(e.payload) : e.payload;
+      const div = document.createElement('div');
+      div.className = 'history-row';
+      div.innerHTML = `<span class="muted" style="font-size:10px;">${ts}</span><br>
+        <b>${e.event}</b> · ${p.target || (p.args ? JSON.stringify(p.args).slice(0, 60) : '')}`;
+      container.appendChild(div);
+    });
+  } catch (ex) {
+    container.innerHTML = `<div class="ko" style="font-size:11px;">${ex.message}</div>`;
+  }
+}
+document.getElementById('intel-history-refresh').addEventListener('click', loadIntelHistory);

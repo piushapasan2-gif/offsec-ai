@@ -193,6 +193,94 @@ def api_intel_call(provider):
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
+
+# --- Intel bulk scan ---
+@app.route("/api/intel/bulk", methods=["POST"])
+@require_auth
+def api_intel_bulk():
+    import re, importlib, ipaddress
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    data = request.get_json(force=True) or {}
+    target = (data.get("target") or "").strip()
+    if not target:
+        return jsonify({"ok": False, "error": "target required"}), 400
+
+    # Detect target type
+    def is_ip(t):
+        try: ipaddress.ip_address(t); return True
+        except: return False
+    def is_hash(t):
+        return bool(re.match(r'^[0-9a-fA-F]{32,64}$', t))
+
+    if is_ip(target):
+        target_type = "ip"
+        tasks = {
+            "shodan":     ("shodan_intel",  "host_info",           {"ip": target}),
+            "virustotal": ("virustotal",    "ip_info",             {"ip": target}),
+            "abuseipdb":  ("abuseipdb",     "check_ip",            {"ip": target}),
+            "ipinfo":     ("ipinfo",        "lookup",              {"ip": target}),
+            "otx":        ("otx",           "ip_indicators",       {"ip": target}),
+        }
+    elif is_hash(target):
+        target_type = "hash"
+        tasks = {
+            "virustotal": ("virustotal",    "file_hash_info",      {"hash_": target}),
+            "otx":        ("otx",           "file_hash_indicators",{"hash_": target}),
+        }
+    else:
+        target_type = "domain"
+        tasks = {
+            "virustotal": ("virustotal",    "domain_info",         {"domain": target}),
+            "otx":        ("otx",           "domain_indicators",   {"domain": target}),
+            "urlscan":    ("urlscan",       "search",              {"query": target}),
+            "fullhunt":   ("fullhunt",      "domain_details",      {"domain": target}),
+            "leakix":     ("leakix",        "search",              {"query": target}),
+        }
+
+    # Key availability map
+    key_map = {
+        "shodan": bool(Config.INTEL_KEYS.get("shodan")),
+        "virustotal": bool(Config.INTEL_KEYS.get("virustotal")),
+        "abuseipdb": bool(Config.INTEL_KEYS.get("abuseipdb")),
+        "ipinfo": bool(Config.INTEL_KEYS.get("ipinfo")),
+        "otx": bool(Config.INTEL_KEYS.get("otx")),
+        "urlscan": bool(Config.INTEL_KEYS.get("urlscan")),
+        "fullhunt": bool(Config.INTEL_KEYS.get("fullhunt")),
+        "leakix": bool(Config.INTEL_KEYS.get("leakix")),
+    }
+    active = {k: v for k, v in tasks.items() if key_map.get(k, False)}
+
+    def run_one(name, module_name, fn_name, args):
+        try:
+            m = importlib.import_module(f"backend.intelligence.{module_name}")
+            result = getattr(m, fn_name)(**args)
+            return name, {"ok": True, "data": result}
+        except Exception as e:
+            return name, {"ok": False, "error": str(e)}
+
+    results = {}
+    with ThreadPoolExecutor(max_workers=6) as ex:
+        futures = {ex.submit(run_one, n, mod, fn, args): n
+                   for n, (mod, fn, args) in active.items()}
+        for future in as_completed(futures, timeout=30):
+            name, res = future.result()
+            results[name] = res
+
+    audit_repo.log("intel.bulk", {"target": target, "type": target_type,
+                                   "providers": list(results.keys())},
+                   user_id=current_user_id())
+    return jsonify({"ok": True, "target": target, "type": target_type, "results": results})
+
+
+# --- Intel history (last 50 intel audit events) ---
+@app.route("/api/intel/history")
+@require_auth
+def api_intel_history():
+    rows = audit_repo.recent(current_user_id(), limit=50, prefix="intel.")
+    return jsonify(rows)
+
+
 # --- Scope ---
 @app.route("/api/scope", methods=["GET", "POST"])
 @require_auth

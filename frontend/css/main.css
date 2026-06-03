@@ -176,3 +176,73 @@ aside, section { background: var(--bg-alt); overflow: hidden; }
   background: none;
   padding: 0;
 }
+
+/* ─── MVP 3 — Intel dashboard ─────────── */
+.intel-subtabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 4px;
+}
+.itab {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-family: var(--font);
+  font-size: 10px;
+  letter-spacing: 1px;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+.itab.active { color: var(--neon); border-bottom: 1px solid var(--neon); }
+.itab:hover { color: var(--cyan); }
+
+.itab-pane { display: none; }
+.itab-pane.active { display: block; }
+
+.bulk-bar {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.bulk-bar input { flex: 1; }
+
+/* Intel result card */
+.intel-card {
+  background: rgba(0,255,156,0.03);
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--neon-dim);
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+.intel-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+.intel-provider-name {
+  color: var(--neon);
+  font-size: 11px;
+  letter-spacing: 1px;
+}
+.intel-card-summary { color: var(--text); margin: 4px 0 6px; line-height: 1.6; }
+.intel-card-actions { display: flex; gap: 6px; }
+.intel-card-raw {
+  margin-top: 8px;
+  font-size: 10px;
+  max-height: 200px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* History rows */
+.history-row {
+  border-bottom: 1px solid var(--border);
+  padding: 5px 0;
+  font-size: 11px;
+  line-height: 1.6;
+}
