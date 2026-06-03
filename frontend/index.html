@@ -6,7 +6,9 @@
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <link rel="stylesheet" href="/css/main.css" />
 <link rel="stylesheet" href="/css/terminal.css" />
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css" />
 <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.5.4/socket.io.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 </head>
 <body>
 
@@ -25,28 +27,37 @@
     <span class="sep">|</span>
     <span id="provider-info">—</span>
     <span class="sep">|</span>
-    <button onclick="window.offsecLogout()" style="background:none;border:1px solid var(--border);color:var(--muted);font-family:var(--font);font-size:11px;padding:2px 8px;cursor:pointer;letter-spacing:1px;" title="Logout">logout</button>
+    <button onclick="window.offsecLogout()" style="background:none;border:1px solid var(--border);color:var(--muted);font-family:var(--font);font-size:11px;padding:2px 8px;cursor:pointer;letter-spacing:1px;">logout</button>
   </div>
 </header>
 
 <main>
   <aside id="sidebar">
     <div class="section">
-      <div class="section-title">▎LLM PROVIDERS</div>
+      <div class="section-title" style="display:flex;justify-content:space-between;align-items:center;">
+        <span>▎ LLM PROVIDERS</span>
+      </div>
       <div id="llm-list" class="provider-list"></div>
     </div>
     <div class="section">
-      <div class="section-title">▎INTEL APIS</div>
+      <div class="section-title">▎ INTEL APIS</div>
       <div id="intel-list" class="provider-list"></div>
     </div>
     <div class="section">
-      <div class="section-title">▎SCOPE</div>
+      <div class="section-title">▎ SCOPE</div>
       <div id="scope-info" class="scope-info">loading…</div>
       <button id="scope-edit" class="btn-sm">edit scope</button>
     </div>
     <div class="section">
-      <div class="section-title">▎QUOTAS</div>
+      <div class="section-title">▎ QUOTAS</div>
       <div id="quotas" class="quotas">—</div>
+    </div>
+    <div class="section">
+      <div class="section-title" style="display:flex;justify-content:space-between;align-items:center;">
+        <span>▎ SESSIONS</span>
+        <button id="new-chat-btn" class="btn-sm" style="font-size:10px;padding:1px 6px;">+ new</button>
+      </div>
+      <div id="session-list" class="provider-list" style="max-height:180px;overflow-y:auto;"></div>
     </div>
   </aside>
 
@@ -60,8 +71,8 @@
       <select id="prefer" title="Prefer a specific LLM">
         <option value="">auto</option>
       </select>
-      <input id="target" type="text" placeholder="target (optional, for scope check)" />
-      <textarea id="prompt" rows="2" placeholder="Ask anything offensive-security related… e.g. 'How do I kerberoast example.local?'"></textarea>
+      <input id="target" type="text" placeholder="target (optional)" />
+      <textarea id="prompt" rows="2" placeholder="Ask anything security related… e.g. 'How do I kerberoast example.local?'"></textarea>
       <button type="submit" id="send-btn">▶ SEND</button>
     </form>
   </section>

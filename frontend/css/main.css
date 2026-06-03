@@ -113,3 +113,66 @@ aside, section { background: var(--bg-alt); overflow: hidden; }
 ::-webkit-scrollbar-track { background: var(--bg); }
 ::-webkit-scrollbar-thumb { background: var(--border); }
 ::-webkit-scrollbar-thumb:hover { background: var(--neon-dim); }
+
+/* ─── MVP 2 additions ─────────────────── */
+
+/* Streaming pulse on assistant bubble */
+.msg.streaming .msg-body::after {
+  content: '▋';
+  animation: blink 0.7s step-end infinite;
+  color: var(--neon);
+  margin-left: 2px;
+}
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+
+/* Copy button */
+.copy-btn {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 2px 8px;
+  font-family: var(--font);
+  font-size: 10px;
+  letter-spacing: 1px;
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.msg:hover .copy-btn { opacity: 1; }
+.copy-btn:hover { color: var(--neon); border-color: var(--neon); }
+
+/* Active session in sidebar */
+.session-row.active-session {
+  color: var(--neon);
+  border-left: 2px solid var(--neon);
+  padding-left: 4px;
+}
+.session-row:hover { color: var(--cyan); cursor: pointer; }
+
+/* Scrollable session list */
+#session-list::-webkit-scrollbar { width: 3px; }
+#session-list::-webkit-scrollbar-thumb { background: var(--border); }
+
+/* Code block overrides inside messages */
+.msg-body pre {
+  background: #0d1117;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 10px 12px;
+  overflow-x: auto;
+  margin: 8px 0;
+  font-size: 12px;
+}
+.msg-body code {
+  font-family: var(--font);
+  font-size: 12px;
+  background: rgba(0,255,156,0.08);
+  padding: 1px 4px;
+  border-radius: 2px;
+}
+.msg-body pre code {
+  background: none;
+  padding: 0;
+}

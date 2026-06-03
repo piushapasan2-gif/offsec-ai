@@ -1,4 +1,5 @@
-"""Orchestrator — handles a user request end-to-end."""
+"""Orchestrator — handles user requests, both blocking and streaming."""
+import json
 from backend.core import router
 from backend.core.scope_guard import enforce_scope
 from backend.db.repo import chat_repo, audit_repo
@@ -34,32 +35,33 @@ def classify(prompt: str) -> str:
     return "security_research"
 
 
-def handle(prompt, user_id, session_id=None, prefer=None, target=None):
-    # Scope check
+def _setup(prompt, user_id, session_id=None, target=None):
+    """Common setup for handle() and handle_stream(): scope check + session + history."""
     if target:
         ok, reason = enforce_scope(target, session_id)
         if not ok:
-            audit_repo.log("scope.blocked",
-                           {"target": target, "reason": reason}, user_id=user_id)
-            return {"ok": False, "error": f"Target out of scope: {reason}",
-                    "scope_blocked": True}
+            audit_repo.log("scope.blocked", {"target": target, "reason": reason}, user_id=user_id)
+            return None, None, None, {"ok": False, "error": f"Target out of scope: {reason}", "scope_blocked": True}
 
-    # Session bootstrap
     if not session_id:
         session_id = chat_repo.new_session(user_id, title=prompt[:60])
 
-    # History + system
     history = chat_repo.history(session_id, user_id, limit=20)
     messages = [{"role": "system", "content": SYSTEM_PROMPT}] + history + [
         {"role": "user", "content": prompt}
     ]
-
     task_type = classify(prompt)
-    log.info(f"session={str(session_id)[:8]} task={task_type} u={str(user_id)[:8]}")
-
-    # Save user msg
     chat_repo.add(session_id, user_id, "user", prompt)
+    return session_id, messages, task_type, None
 
+
+def handle(prompt, user_id, session_id=None, prefer=None, target=None):
+    """Blocking handler — returns full response dict."""
+    session_id, messages, task_type, err = _setup(prompt, user_id, session_id, target)
+    if err:
+        return err
+
+    log.info(f"session={str(session_id)[:8]} task={task_type}")
     try:
         result = router.chat(messages, task_type=task_type, prefer=prefer)
     except Exception as e:
@@ -75,3 +77,45 @@ def handle(prompt, user_id, session_id=None, prefer=None, target=None):
     }, user_id=user_id)
 
     return {"ok": True, "session_id": session_id, "task_type": task_type, **result}
+
+
+def handle_stream(prompt, user_id, session_id=None, prefer=None, target=None):
+    """
+    Streaming handler — yields SSE-ready dicts.
+    Caller serialises to: data: <json>\n\n
+    """
+    session_id, messages, task_type, err = _setup(prompt, user_id, session_id, target)
+    if err:
+        yield err
+        return
+
+    log.info(f"[stream] session={str(session_id)[:8]} task={task_type}")
+
+    full_content = []
+    provider_name = ""
+    model_name = ""
+
+    try:
+        for chunk in router.stream(messages, task_type=task_type, prefer=prefer):
+            if chunk["type"] == "meta":
+                provider_name = chunk["provider"]
+                model_name = chunk["model"]
+                yield {"type": "meta", "provider": provider_name, "model": model_name,
+                       "session_id": session_id, "task_type": task_type}
+            elif chunk["type"] == "token":
+                full_content.append(chunk["text"])
+                yield {"type": "token", "text": chunk["text"]}
+            elif chunk["type"] == "done":
+                assembled = "".join(full_content)
+                chat_repo.add(session_id, user_id, "assistant", assembled,
+                              provider=provider_name, model=model_name,
+                              elapsed_ms=chunk.get("elapsed_ms"))
+                audit_repo.log("llm.success", {
+                    "provider": provider_name, "model": model_name,
+                    "task_type": task_type, "elapsed_ms": chunk.get("elapsed_ms"),
+                }, user_id=user_id)
+                yield {"type": "done", "session_id": session_id,
+                       "elapsed_ms": chunk.get("elapsed_ms")}
+    except Exception as e:
+        audit_repo.log("llm.failed", {"error": str(e)}, user_id=user_id)
+        yield {"type": "error", "error": str(e), "session_id": session_id}

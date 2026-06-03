@@ -81,6 +81,39 @@ def api_chat():
     return jsonify(result)
 
 
+
+# --- Streaming chat ---
+@app.route("/api/chat/stream", methods=["POST"])
+@require_auth
+def api_chat_stream():
+    import json as _json
+    from flask import Response, stream_with_context
+    data = request.get_json(force=True)
+    prompt = (data.get("prompt") or "").strip()
+    if not prompt:
+        return jsonify({"ok": False, "error": "empty prompt"}), 400
+
+    uid = current_user_id()
+    sid = data.get("session_id")
+    prefer = data.get("prefer")
+    target = data.get("target")
+
+    def generate():
+        try:
+            for chunk in orchestrator.handle_stream(prompt, user_id=uid,
+                                                    session_id=sid, prefer=prefer, target=target):
+                yield f"data: {_json.dumps(chunk)}\n\n"
+        except Exception as e:
+            yield f"data: {_json.dumps({'type': 'error', 'error': str(e)})}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 @app.route("/api/sessions")
 @require_auth
 def api_sessions():

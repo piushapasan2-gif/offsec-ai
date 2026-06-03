@@ -1,27 +1,26 @@
 // ═══════════════════════════════════════
-//  OffSec AI 2025 - Frontend (auth-gated)
+//  OffSec AI 2025 — Frontend v2 (streaming)
 // ═══════════════════════════════════════
 
-// ─── Auth bootstrap ───
+// ─── Auth ───────────────────────────────
 const JWT = localStorage.getItem('offsec_jwt');
 if (!JWT) { location.href = '/login'; }
 
-// fetch wrapper that injects Authorization header + handles 401 → login
 async function api(path, opts = {}) {
   const headers = Object.assign(
-    {'Authorization': 'Bearer ' + JWT, 'Content-Type': 'application/json'},
+    { 'Authorization': 'Bearer ' + JWT, 'Content-Type': 'application/json' },
     opts.headers || {}
   );
-  const r = await fetch(path, Object.assign({}, opts, {headers}));
+  const r = await fetch(path, Object.assign({}, opts, { headers }));
   if (r.status === 401) {
     localStorage.removeItem('offsec_jwt');
     location.href = '/login';
-    return;
+    return null;
   }
   return r;
 }
 
-// ─── Matrix rain ───
+// ─── Matrix rain ────────────────────────
 (function () {
   const cvs = document.getElementById('matrix');
   const ctx = cvs.getContext('2d');
@@ -36,14 +35,14 @@ async function api(path, opts = {}) {
     ctx.fillStyle = '#00ff9c';
     ctx.font = '13px monospace';
     for (let i = 0; i < drops.length; i++) {
-      ctx.fillText(ch[Math.floor(Math.random()*ch.length)], i*14, drops[i]*14);
-      if (drops[i]*14 > cvs.height && Math.random() > 0.975) drops[i] = 0;
+      ctx.fillText(ch[Math.floor(Math.random() * ch.length)], i * 14, drops[i] * 14);
+      if (drops[i] * 14 > cvs.height && Math.random() > 0.975) drops[i] = 0;
       drops[i]++;
     }
   }, 60);
 })();
 
-// ─── Socket.IO with JWT ───
+// ─── Socket.IO ──────────────────────────
 const socket = io({ auth: { token: JWT }, query: { token: JWT } });
 const dot = document.getElementById('dot');
 const statusText = document.getElementById('status-text');
@@ -60,19 +59,267 @@ socket.on('log', (d) => {
   if (el) el.textContent = `[${new Date().toLocaleTimeString()}] [${d.level}] ${d.msg}\n` + el.textContent;
 });
 
-// ─── State ───
+// ─── State ──────────────────────────────
 let SESSION_ID = localStorage.getItem('offsec_session') || null;
 let CURRENT_USER = null;
+let IS_STREAMING = false;
 
-// ─── Boot ───
+// ─── Markdown renderer ──────────────────
+function renderMarkdown(text) {
+  // Escape HTML first
+  let html = text
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  // Code blocks with syntax highlighting
+  html = html.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, code) => {
+    const highlighted = (lang && hljs.getLanguage(lang))
+      ? hljs.highlight(code.trim(), { language: lang }).value
+      : hljs.highlightAuto(code.trim()).value;
+    return `<pre><code class="hljs language-${lang || 'plaintext'}">${highlighted}</code></pre>`;
+  });
+
+  // Inline code
+  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+  // Bold
+  html = html.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+  // Line breaks
+  html = html.replace(/\n/g, '<br>');
+  return html;
+}
+
+// ─── Message builder ────────────────────
+function appendMsg(role, content, meta) {
+  const wrap = document.createElement('div');
+  wrap.className = 'msg ' + role;
+
+  const body = document.createElement('div');
+  body.className = 'msg-body';
+  body.innerHTML = renderMarkdown(content);
+  wrap.appendChild(body);
+
+  if (meta) {
+    const m = document.createElement('div');
+    m.className = 'meta';
+    m.textContent = meta;
+    wrap.appendChild(m);
+  }
+
+  // Copy button for assistant messages
+  if (role === 'assistant') {
+    const btn = document.createElement('button');
+    btn.className = 'copy-btn';
+    btn.textContent = 'copy';
+    btn.onclick = () => {
+      navigator.clipboard.writeText(content).then(() => {
+        btn.textContent = 'copied!';
+        setTimeout(() => { btn.textContent = 'copy'; }, 1500);
+      });
+    };
+    wrap.appendChild(btn);
+  }
+
+  const list = document.getElementById('messages');
+  list.appendChild(wrap);
+  list.scrollTop = list.scrollHeight;
+  return body; // return body for streaming updates
+}
+
+// Create a streaming message bubble (returns updater fn)
+function createStreamingMsg() {
+  const wrap = document.createElement('div');
+  wrap.className = 'msg assistant streaming';
+
+  const body = document.createElement('div');
+  body.className = 'msg-body';
+  wrap.appendChild(body);
+
+  const meta = document.createElement('div');
+  meta.className = 'meta';
+  meta.textContent = 'streaming…';
+  wrap.appendChild(meta);
+
+  const list = document.getElementById('messages');
+  list.appendChild(wrap);
+  list.scrollTop = list.scrollHeight;
+
+  let fullText = '';
+
+  return {
+    append(token) {
+      fullText += token;
+      body.innerHTML = renderMarkdown(fullText);
+      list.scrollTop = list.scrollHeight;
+    },
+    finish(metaText, rawContent) {
+      wrap.classList.remove('streaming');
+      meta.textContent = metaText;
+
+      // Add copy button
+      const btn = document.createElement('button');
+      btn.className = 'copy-btn';
+      btn.textContent = 'copy';
+      btn.onclick = () => {
+        navigator.clipboard.writeText(rawContent || fullText).then(() => {
+          btn.textContent = 'copied!';
+          setTimeout(() => { btn.textContent = 'copy'; }, 1500);
+        });
+      };
+      wrap.appendChild(btn);
+    },
+  };
+}
+
+// ─── Streaming chat submit ───────────────
+document.getElementById('chat-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (IS_STREAMING) return;
+
+  const prompt = document.getElementById('prompt').value.trim();
+  if (!prompt) return;
+  const prefer = document.getElementById('prefer').value || null;
+  const target = document.getElementById('target').value.trim() || null;
+
+  appendMsg('user', prompt);
+  document.getElementById('prompt').value = '';
+
+  const thinking = document.getElementById('thinking');
+  thinking.classList.remove('hidden');
+  document.getElementById('thinking-text').textContent =
+    `routing… ${prefer ? '[' + prefer + ']' : '[auto]'}`;
+
+  IS_STREAMING = true;
+  document.getElementById('send-btn').disabled = true;
+
+  let streamingMsg = null;
+  let metaInfo = {};
+  let fullContent = '';
+
+  try {
+    const r = await fetch('/api/chat/stream', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + JWT, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt, session_id: SESSION_ID, prefer, target }),
+    });
+
+    if (!r.ok || !r.body) {
+      const err = await r.json().catch(() => ({ error: 'stream failed' }));
+      thinking.classList.add('hidden');
+      appendMsg('assistant', `[!] ${err.error || 'error'}`);
+      return;
+    }
+
+    const reader = r.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop(); // keep incomplete line
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const data = line.slice(6).trim();
+        if (data === '[DONE]') break;
+
+        let chunk;
+        try { chunk = JSON.parse(data); } catch { continue; }
+
+        if (chunk.type === 'meta') {
+          thinking.classList.add('hidden');
+          metaInfo = chunk;
+          SESSION_ID = chunk.session_id;
+          localStorage.setItem('offsec_session', SESSION_ID);
+          streamingMsg = createStreamingMsg();
+        } else if (chunk.type === 'token') {
+          fullContent += chunk.text;
+          if (streamingMsg) streamingMsg.append(chunk.text);
+        } else if (chunk.type === 'done') {
+          const elapsed = chunk.elapsed_ms ? `${chunk.elapsed_ms}ms` : '';
+          if (streamingMsg) {
+            streamingMsg.finish(
+              `via ${metaInfo.provider} (${metaInfo.model}) · ${metaInfo.task_type} · ${elapsed}`,
+              fullContent
+            );
+          }
+          refreshSessions();
+        } else if (chunk.type === 'error') {
+          thinking.classList.add('hidden');
+          if (streamingMsg) {
+            streamingMsg.finish('error', '');
+          } else {
+            appendMsg('assistant', `[!] ${chunk.error}`);
+          }
+        }
+      }
+    }
+  } catch (err) {
+    thinking.classList.add('hidden');
+    appendMsg('assistant', '[!] network error: ' + err.message);
+  } finally {
+    thinking.classList.add('hidden');
+    IS_STREAMING = false;
+    document.getElementById('send-btn').disabled = false;
+  }
+});
+
+document.getElementById('prompt').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    document.getElementById('chat-form').requestSubmit();
+  }
+});
+
+// ─── Sessions ───────────────────────────
+async function refreshSessions() {
+  try {
+    const r = await api('/api/sessions');
+    if (!r) return;
+    const sessions = await r.json();
+    const list = document.getElementById('session-list');
+    list.innerHTML = '';
+    sessions.forEach(s => {
+      const row = document.createElement('div');
+      row.className = 'provider-row session-row' + (s.id === SESSION_ID ? ' active-session' : '');
+      row.style.cursor = 'pointer';
+      row.title = s.title;
+      row.innerHTML = `<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:140px;">${s.title || 'Untitled'}</span>`;
+      row.onclick = () => loadSession(s.id, s.title);
+      list.appendChild(row);
+    });
+  } catch (e) { /* silent */ }
+}
+
+async function loadSession(sid, title) {
+  SESSION_ID = sid;
+  localStorage.setItem('offsec_session', sid);
+  const r = await api(`/api/sessions/${sid}`);
+  if (!r) return;
+  const data = await r.json();
+  const list = document.getElementById('messages');
+  list.innerHTML = '';
+  (data.messages || []).forEach(m => appendMsg(m.role, m.content));
+  refreshSessions();
+}
+
+document.getElementById('new-chat-btn').addEventListener('click', () => {
+  SESSION_ID = null;
+  localStorage.removeItem('offsec_session');
+  document.getElementById('messages').innerHTML = '';
+  refreshSessions();
+});
+
+// ─── Boot ───────────────────────────────
 async function boot() {
   // Identity
   try {
     const meR = await api('/api/auth/me');
     if (!meR) return;
-    const me = await meR.json();
-    CURRENT_USER = me.user;
-  } catch(e) { console.warn('auth/me failed:', e); }
+    CURRENT_USER = (await meR.json()).user;
+  } catch (e) { console.warn('auth/me:', e); }
 
   // LLMs
   try {
@@ -93,7 +340,7 @@ async function boot() {
     }
     document.getElementById('provider-info').textContent =
       `${(CURRENT_USER && CURRENT_USER.email) || 'user'} · ${llm.configured.length} LLMs`;
-  } catch(e) { console.warn('llm/status failed:', e); }
+  } catch (e) { console.warn('llm/status:', e); }
 
   // Intel
   try {
@@ -114,35 +361,53 @@ async function boot() {
     }
     updateIntelActions();
     intelProv.addEventListener('change', updateIntelActions);
-  } catch(e) { console.warn('intel/status failed:', e); }
+  } catch (e) { console.warn('intel/status:', e); }
 
   // Scope
   try {
     const scope = await (await api('/api/scope')).json();
     document.getElementById('scope-info').innerHTML =
       `mode: <b>${scope.mode}</b><br>engagement: ${scope.current || '<i>none</i>'}`;
-  } catch(e) { document.getElementById('scope-info').textContent = 'unavailable'; }
+  } catch (e) { document.getElementById('scope-info').textContent = 'unavailable'; }
 
   // Quotas
   try {
     const q = await (await api('/api/quotas')).json();
-    document.getElementById('quotas').innerHTML = Object.entries(q)
-      .map(([k,v]) => `${k}: ${v.used}/${v.limit}`).join('<br>') || '<i>no usage yet</i>';
-  } catch(e) { document.getElementById('quotas').textContent = '—'; }
+    document.getElementById('quotas').innerHTML =
+      Object.entries(q).map(([k, v]) => `${k}: ${v.used}/${v.limit}`).join('<br>') || '<i>no usage yet</i>';
+  } catch (e) { document.getElementById('quotas').textContent = '—'; }
+
+  // Sessions
+  await refreshSessions();
+
+  // Restore last session messages
+  if (SESSION_ID) {
+    try {
+      const r = await api(`/api/sessions/${SESSION_ID}`);
+      if (r) {
+        const data = await r.json();
+        if (data.messages && data.messages.length > 0) {
+          data.messages.forEach(m => appendMsg(m.role, m.content));
+        }
+      }
+    } catch (e) { /* silent */ }
+  }
 }
 
+// ─── Intel tab ──────────────────────────
 const INTEL_ACTIONS = {
-  shodan: ['host','search','info','myip'],
-  virustotal: ['ip','domain','hash','url_scan'],
-  otx: ['ip','domain','hash','pulses'],
-  abuseipdb: ['check'],
-  urlscan: ['submit','result','search'],
-  ipinfo: ['lookup','myip'],
-  cve: ['lookup','search','critical'],
-  github: ['code','repo','commits','org'],
-  fullhunt: ['domain','subdomains'],
-  leakix: ['host','search'],
+  shodan:     ['host', 'search', 'info', 'myip'],
+  virustotal: ['ip', 'domain', 'hash', 'url_scan'],
+  otx:        ['ip', 'domain', 'hash', 'pulses'],
+  abuseipdb:  ['check'],
+  urlscan:    ['submit', 'result', 'search'],
+  ipinfo:     ['lookup', 'myip'],
+  cve:        ['lookup', 'search', 'critical'],
+  github:     ['code', 'repo', 'commits', 'org'],
+  fullhunt:   ['domain', 'subdomains'],
+  leakix:     ['host', 'search'],
 };
+
 function updateIntelActions() {
   const p = document.getElementById('intel-provider').value;
   const sel = document.getElementById('intel-action');
@@ -154,68 +419,35 @@ function updateIntelActions() {
   });
 }
 
-// ─── Chat ───
-function appendMsg(role, content, meta) {
-  const wrap = document.createElement('div');
-  wrap.className = 'msg ' + role;
-  const html = content
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/```([\s\S]*?)```/g, (m, c) => `<pre>${c}</pre>`)
-    .replace(/`([^`]+)`/g, (m, c) => `<code>${c}</code>`)
-    .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
-  wrap.innerHTML = html;
-  if (meta) {
-    const m = document.createElement('div'); m.className = 'meta';
-    m.textContent = meta;
-    wrap.appendChild(m);
-  }
-  const list = document.getElementById('messages');
-  list.appendChild(wrap);
-  list.scrollTop = list.scrollHeight;
-}
-
-document.getElementById('chat-form').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const prompt = document.getElementById('prompt').value.trim();
-  if (!prompt) return;
-  const prefer = document.getElementById('prefer').value || null;
-  const target = document.getElementById('target').value.trim() || null;
-  appendMsg('user', prompt);
-  document.getElementById('prompt').value = '';
-  const thinking = document.getElementById('thinking');
-  thinking.classList.remove('hidden');
-  document.getElementById('thinking-text').textContent =
-    `routing… ${prefer ? '[' + prefer + ']' : '[auto]'}`;
+document.getElementById('intel-run').addEventListener('click', async () => {
+  const provider = document.getElementById('intel-provider').value;
+  const action = document.getElementById('intel-action').value;
+  const arg = document.getElementById('intel-arg').value.trim();
+  if (!provider || !arg) return;
+  const out = document.getElementById('intel-output');
+  out.textContent = 'querying…';
+  const argMap = {
+    host: 'ip', ip: 'ip', domain: 'domain', hash: 'hash_', search: 'query',
+    code: 'query', repo: 'query', commits: 'query', org: 'org', lookup: 'cve_id',
+    check: 'ip', submit: 'url', result: 'uuid', pulses: 'query',
+    critical: 'days', subdomains: 'domain',
+  };
+  const argName = argMap[action] || 'query';
+  let args;
+  if (action === 'lookup' && provider === 'ipinfo') args = { ip: arg };
+  else if (action === 'critical') args = { days: parseInt(arg) || 7 };
+  else args = { [argName]: arg };
   try {
-    const r = await api('/api/chat', {
+    const r = await api(`/api/intel/${provider}`, {
       method: 'POST',
-      body: JSON.stringify({prompt, session_id: SESSION_ID, prefer, target}),
+      body: JSON.stringify({ action, args }),
     });
-    if (!r) return;
     const data = await r.json();
-    thinking.classList.add('hidden');
-    if (!data.ok) {
-      appendMsg('assistant', `[!] ${data.error || 'error'}`);
-      return;
-    }
-    SESSION_ID = data.session_id;
-    localStorage.setItem('offsec_session', SESSION_ID);
-    appendMsg('assistant', data.content,
-      `via ${data.provider} (${data.model}) · ${data.task_type} · ${data.elapsed_ms}ms`);
-  } catch (err) {
-    thinking.classList.add('hidden');
-    appendMsg('assistant', '[!] network error: ' + err);
-  }
+    out.textContent = JSON.stringify(data, null, 2);
+  } catch (err) { out.textContent = 'error: ' + err; }
 });
 
-document.getElementById('prompt').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && !e.shiftKey) {
-    e.preventDefault();
-    document.getElementById('chat-form').requestSubmit();
-  }
-});
-
-// ─── Tabs ───
+// ─── Tabs ───────────────────────────────
 document.querySelectorAll('.tab').forEach(t => {
   t.addEventListener('click', () => {
     document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
@@ -226,49 +458,24 @@ document.querySelectorAll('.tab').forEach(t => {
   });
 });
 
-// ─── Intel ───
-document.getElementById('intel-run').addEventListener('click', async () => {
-  const provider = document.getElementById('intel-provider').value;
-  const action = document.getElementById('intel-action').value;
-  const arg = document.getElementById('intel-arg').value.trim();
-  if (!provider || !arg) return;
-  const out = document.getElementById('intel-output');
-  out.textContent = 'querying…';
-  const argMap = {
-    host:'ip', ip:'ip', domain:'domain', hash:'hash_', search:'query',
-    code:'query', repo:'query', commits:'query', org:'org', lookup:'cve_id',
-    check:'ip', submit:'url', result:'uuid', pulses:'query',
-    critical:'days', subdomains:'domain',
-  };
-  const argName = argMap[action] || 'query';
-  let args;
-  if (action === 'lookup' && provider === 'ipinfo') args = {ip: arg};
-  else if (action === 'critical') args = {days: parseInt(arg) || 7};
-  else args = {[argName]: arg};
-  try {
-    const r = await api(`/api/intel/${provider}`, {
-      method: 'POST', body: JSON.stringify({action, args}),
-    });
-    out.textContent = JSON.stringify(await r.json(), null, 2);
-  } catch (err) { out.textContent = 'error: ' + err; }
-});
-
-// ─── Audit ───
+// ─── Audit ──────────────────────────────
 async function refreshAudit() {
-  const r = await api('/api/audit');
-  const data = await r.json();
-  document.getElementById('audit-output').textContent =
-    data.map(e => {
-      const ts = typeof e.ts === 'number'
-        ? new Date(e.ts*1000).toLocaleTimeString()
-        : new Date(e.ts).toLocaleTimeString();
-      const p = typeof e.payload === 'string' ? e.payload : JSON.stringify(e.payload);
-      return `[${ts}] ${e.event}  ${p.slice(0,80)}`;
-    }).join('\n');
+  try {
+    const r = await api('/api/audit');
+    const data = await r.json();
+    document.getElementById('audit-output').textContent =
+      data.map(e => {
+        const ts = typeof e.ts === 'number'
+          ? new Date(e.ts * 1000).toLocaleTimeString()
+          : new Date(e.ts).toLocaleTimeString();
+        const p = typeof e.payload === 'string' ? e.payload : JSON.stringify(e.payload);
+        return `[${ts}] ${e.event}  ${p.slice(0, 80)}`;
+      }).join('\n');
+  } catch (e) { /* silent */ }
 }
 document.getElementById('audit-refresh').addEventListener('click', refreshAudit);
 
-// ─── Logout ───
+// ─── Logout ─────────────────────────────
 function logout() {
   localStorage.removeItem('offsec_jwt');
   localStorage.removeItem('offsec_refresh');
